@@ -28,7 +28,7 @@ var fails = function (exec) {
 
 // Thank's IE8 for his funny defineProperty
 var descriptors = !fails(function () {
-  return Object.defineProperty({}, 'a', { get: function () { return 7; } }).a != 7;
+  return Object.defineProperty({}, 1, { get: function () { return 7; } })[1] != 7;
 });
 
 var nativePropertyIsEnumerable = {}.propertyIsEnumerable;
@@ -209,9 +209,9 @@ var shared = createCommonjsModule(function (module) {
 (module.exports = function (key, value) {
   return sharedStore[key] || (sharedStore[key] = value !== undefined ? value : {});
 })('versions', []).push({
-  version: '3.6.0',
+  version: '3.6.4',
   mode:  'global',
-  copyright: '© 2019 Denis Pushkarev (zloirock.ru)'
+  copyright: '© 2020 Denis Pushkarev (zloirock.ru)'
 });
 });
 
@@ -528,7 +528,7 @@ var useSymbolAsUid = nativeSymbol
   // eslint-disable-next-line no-undef
   && !Symbol.sham
   // eslint-disable-next-line no-undef
-  && typeof Symbol() == 'symbol';
+  && typeof Symbol.iterator == 'symbol';
 
 // `IsArray` abstract operation
 // https://tc39.github.io/ecma262/#sec-isarray
@@ -661,7 +661,7 @@ var objectGetOwnPropertyNamesExternal = {
 
 var WellKnownSymbolsStore = shared('wks');
 var Symbol$1 = global_1.Symbol;
-var createWellKnownSymbol = useSymbolAsUid ? Symbol$1 : uid;
+var createWellKnownSymbol = useSymbolAsUid ? Symbol$1 : Symbol$1 && Symbol$1.withoutSetter || uid;
 
 var wellKnownSymbol = function (name) {
   if (!has(WellKnownSymbolsStore, name)) {
@@ -672,7 +672,7 @@ var wellKnownSymbol = function (name) {
 
 var f$6 = wellKnownSymbol;
 
-var wrappedWellKnownSymbol = {
+var wellKnownSymbolWrapped = {
 	f: f$6
 };
 
@@ -681,7 +681,7 @@ var defineProperty = objectDefineProperty.f;
 var defineWellKnownSymbol = function (NAME) {
   var Symbol = path.Symbol || (path.Symbol = {});
   if (!has(Symbol, NAME)) defineProperty(Symbol, NAME, {
-    value: wrappedWellKnownSymbol.f(NAME)
+    value: wellKnownSymbolWrapped.f(NAME)
   });
 };
 
@@ -704,7 +704,7 @@ var aFunction$1 = function (it) {
 };
 
 // optional / simple context binding
-var bindContext = function (fn, that, length) {
+var functionBindContext = function (fn, that, length) {
   aFunction$1(fn);
   if (that === undefined) return fn;
   switch (length) {
@@ -756,7 +756,7 @@ var createMethod$1 = function (TYPE) {
   return function ($this, callbackfn, that, specificCreate) {
     var O = toObject($this);
     var self = indexedObject(O);
-    var boundFunction = bindContext(callbackfn, that, 3);
+    var boundFunction = functionBindContext(callbackfn, that, 3);
     var length = toLength(self.length);
     var index = 0;
     var create = specificCreate || arraySpeciesCreate;
@@ -852,7 +852,7 @@ var wrap = function (tag, description) {
   return symbol;
 };
 
-var isSymbol = nativeSymbol && typeof $Symbol.iterator == 'symbol' ? function (it) {
+var isSymbol = useSymbolAsUid ? function (it) {
   return typeof it == 'symbol';
 } : function (it) {
   return Object(it) instanceof $Symbol;
@@ -947,11 +947,19 @@ if (!nativeSymbol) {
     return getInternalState(this).tag;
   });
 
+  redefine($Symbol, 'withoutSetter', function (description) {
+    return wrap(uid(description), description);
+  });
+
   objectPropertyIsEnumerable.f = $propertyIsEnumerable;
   objectDefineProperty.f = $defineProperty;
   objectGetOwnPropertyDescriptor.f = $getOwnPropertyDescriptor;
   objectGetOwnPropertyNames.f = objectGetOwnPropertyNamesExternal.f = $getOwnPropertyNames;
   objectGetOwnPropertySymbols.f = $getOwnPropertySymbols;
+
+  wellKnownSymbolWrapped.f = function (name) {
+    return wrap(wellKnownSymbol(name), name);
+  };
 
   if (descriptors) {
     // https://github.com/tc39/proposal-Symbol-description
@@ -965,12 +973,6 @@ if (!nativeSymbol) {
       redefine(ObjectPrototype, 'propertyIsEnumerable', $propertyIsEnumerable, { unsafe: true });
     }
   }
-}
-
-if (!useSymbolAsUid) {
-  wrappedWellKnownSymbol.f = function (name) {
-    return wrap(wellKnownSymbol(name), name);
-  };
 }
 
 _export({ global: true, wrap: true, forced: !nativeSymbol, sham: !nativeSymbol }, {
@@ -1130,7 +1132,7 @@ var createProperty = function (object, key, value) {
   else object[propertyKey] = value;
 };
 
-var userAgent = getBuiltIn('navigator', 'userAgent') || '';
+var engineUserAgent = getBuiltIn('navigator', 'userAgent') || '';
 
 var process = global_1.process;
 var versions = process && process.versions;
@@ -1140,15 +1142,15 @@ var match, version;
 if (v8) {
   match = v8.split('.');
   version = match[0] + match[1];
-} else if (userAgent) {
-  match = userAgent.match(/Edge\/(\d+)/);
+} else if (engineUserAgent) {
+  match = engineUserAgent.match(/Edge\/(\d+)/);
   if (!match || match[1] >= 74) {
-    match = userAgent.match(/Chrome\/(\d+)/);
+    match = engineUserAgent.match(/Chrome\/(\d+)/);
     if (match) version = match[1];
   }
 }
 
-var v8Version = version && +version;
+var engineV8Version = version && +version;
 
 var SPECIES$1 = wellKnownSymbol('species');
 
@@ -1156,7 +1158,7 @@ var arrayMethodHasSpeciesSupport = function (METHOD_NAME) {
   // We can't use this feature detection in V8 since it causes
   // deoptimization and serious performance degradation
   // https://github.com/zloirock/core-js/issues/677
-  return v8Version >= 51 || !fails(function () {
+  return engineV8Version >= 51 || !fails(function () {
     var array = [];
     var constructor = array.constructor = {};
     constructor[SPECIES$1] = function () {
@@ -1173,7 +1175,7 @@ var MAXIMUM_ALLOWED_INDEX_EXCEEDED = 'Maximum allowed index exceeded';
 // We can't use this feature detection in V8 since it causes
 // deoptimization and serious performance degradation
 // https://github.com/zloirock/core-js/issues/679
-var IS_CONCAT_SPREADABLE_SUPPORT = v8Version >= 51 || !fails(function () {
+var IS_CONCAT_SPREADABLE_SUPPORT = engineV8Version >= 51 || !fails(function () {
   var array = [];
   array[IS_CONCAT_SPREADABLE] = false;
   return array.concat()[0] !== array;
@@ -1659,6 +1661,14 @@ defineIterator(String, 'String', function (iterated) {
   return { value: point, done: false };
 });
 
+// TODO: Remove from `core-js@4` since it's moved to entry points
+
+
+
+
+
+
+
 var SPECIES$2 = wellKnownSymbol('species');
 
 var REPLACE_SUPPORTS_NAMED_GROUPS = !fails(function () {
@@ -1678,6 +1688,15 @@ var REPLACE_SUPPORTS_NAMED_GROUPS = !fails(function () {
 // https://stackoverflow.com/questions/6024666/getting-ie-to-replace-a-regex-with-the-literal-string-0
 var REPLACE_KEEPS_$0 = (function () {
   return 'a'.replace(/./, '$0') === '$0';
+})();
+
+var REPLACE = wellKnownSymbol('replace');
+// Safari <= 13.0.3(?) substitutes nth capture where n>m with an empty string
+var REGEXP_REPLACE_SUBSTITUTES_UNDEFINED_CAPTURE = (function () {
+  if (/./[REPLACE]) {
+    return /./[REPLACE]('a', '$0') === '';
+  }
+  return false;
 })();
 
 // Chrome 51 has a buggy "split" implementation when RegExp#exec !== nativeExec
@@ -1727,7 +1746,11 @@ var fixRegexpWellKnownSymbolLogic = function (KEY, length, exec, sham) {
   if (
     !DELEGATES_TO_SYMBOL ||
     !DELEGATES_TO_EXEC ||
-    (KEY === 'replace' && !(REPLACE_SUPPORTS_NAMED_GROUPS && REPLACE_KEEPS_$0)) ||
+    (KEY === 'replace' && !(
+      REPLACE_SUPPORTS_NAMED_GROUPS &&
+      REPLACE_KEEPS_$0 &&
+      !REGEXP_REPLACE_SUBSTITUTES_UNDEFINED_CAPTURE
+    )) ||
     (KEY === 'split' && !SPLIT_WORKS_WITH_OVERWRITTEN_EXEC)
   ) {
     var nativeRegExpMethod = /./[SYMBOL];
@@ -1742,7 +1765,10 @@ var fixRegexpWellKnownSymbolLogic = function (KEY, length, exec, sham) {
         return { done: true, value: nativeMethod.call(str, regexp, arg2) };
       }
       return { done: false };
-    }, { REPLACE_KEEPS_$0: REPLACE_KEEPS_$0 });
+    }, {
+      REPLACE_KEEPS_$0: REPLACE_KEEPS_$0,
+      REGEXP_REPLACE_SUBSTITUTES_UNDEFINED_CAPTURE: REGEXP_REPLACE_SUBSTITUTES_UNDEFINED_CAPTURE
+    });
     var stringMethod = methods[0];
     var regexMethod = methods[1];
 
@@ -1799,6 +1825,10 @@ var maybeToString = function (it) {
 
 // @@replace logic
 fixRegexpWellKnownSymbolLogic('replace', 2, function (REPLACE, nativeReplace, maybeCallNative, reason) {
+  var REGEXP_REPLACE_SUBSTITUTES_UNDEFINED_CAPTURE = reason.REGEXP_REPLACE_SUBSTITUTES_UNDEFINED_CAPTURE;
+  var REPLACE_KEEPS_$0 = reason.REPLACE_KEEPS_$0;
+  var UNSAFE_SUBSTITUTE = REGEXP_REPLACE_SUBSTITUTES_UNDEFINED_CAPTURE ? '$' : '$0';
+
   return [
     // `String.prototype.replace` method
     // https://tc39.github.io/ecma262/#sec-string.prototype.replace
@@ -1812,7 +1842,10 @@ fixRegexpWellKnownSymbolLogic('replace', 2, function (REPLACE, nativeReplace, ma
     // `RegExp.prototype[@@replace]` method
     // https://tc39.github.io/ecma262/#sec-regexp.prototype-@@replace
     function (regexp, replaceValue) {
-      if (reason.REPLACE_KEEPS_$0 || (typeof replaceValue === 'string' && replaceValue.indexOf('$0') === -1)) {
+      if (
+        (!REGEXP_REPLACE_SUBSTITUTES_UNDEFINED_CAPTURE && REPLACE_KEEPS_$0) ||
+        (typeof replaceValue === 'string' && replaceValue.indexOf(UNSAFE_SUBSTITUTE) === -1)
+      ) {
         var res = maybeCallNative(nativeReplace, regexp, this, replaceValue);
         if (res.done) return res.value;
       }

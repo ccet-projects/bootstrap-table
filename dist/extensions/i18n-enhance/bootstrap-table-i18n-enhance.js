@@ -83,9 +83,7 @@
   $.fn.bootstrapTable.methods.push('changeTitle');
   $.fn.bootstrapTable.methods.push('changeLocale');
 
-  $.BootstrapTable =
-  /*#__PURE__*/
-  function (_$$BootstrapTable) {
+  $.BootstrapTable = /*#__PURE__*/function (_$$BootstrapTable) {
     _inherits(_class, _$$BootstrapTable);
 
     function _class() {

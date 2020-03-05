@@ -666,7 +666,7 @@ BootstrapTable.prototype.addLevel = function (index, sortPriority) {
     if (column.sortable === false || column.visible === false) {
       return true
     }
-    $multiSortName.append(`<option value="${column.field}">${column.title}</option>`)
+    $multiSortName.append(`<option value="${ column.sortName || column.field }">${column.title}</option>`)
   })
 
   $.each(this.options.formatSortOrders(), (value, order) => {
@@ -714,10 +714,11 @@ BootstrapTable.prototype.multiSort = function (sortPriority) {
   this.options.sortPriority = sortPriority
   this.options.sortName = ''
 
+  const t = this.options.queryParams
   if (this.options.sidePagination === 'server') {
     this.options.queryParams = params => {
       params.multiSort = this.options.sortPriority
-      return $.fn.bootstrapTable.utils.calculateObjectValue(this.options, this.options.queryParams, [params])
+      return $.fn.bootstrapTable.utils.calculateObjectValue(this.options, t, [params])
     }
     isSingleSort = false
     this.initServer(this.options.silentSort)

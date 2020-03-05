@@ -36,7 +36,7 @@
 
 	// Thank's IE8 for his funny defineProperty
 	var descriptors = !fails(function () {
-	  return Object.defineProperty({}, 'a', { get: function () { return 7; } }).a != 7;
+	  return Object.defineProperty({}, 1, { get: function () { return 7; } })[1] != 7;
 	});
 
 	var nativePropertyIsEnumerable = {}.propertyIsEnumerable;
@@ -217,9 +217,9 @@
 	(module.exports = function (key, value) {
 	  return sharedStore[key] || (sharedStore[key] = value !== undefined ? value : {});
 	})('versions', []).push({
-	  version: '3.6.0',
+	  version: '3.6.4',
 	  mode:  'global',
-	  copyright: '© 2019 Denis Pushkarev (zloirock.ru)'
+	  copyright: '© 2020 Denis Pushkarev (zloirock.ru)'
 	});
 	});
 
@@ -554,11 +554,11 @@
 	  // eslint-disable-next-line no-undef
 	  && !Symbol.sham
 	  // eslint-disable-next-line no-undef
-	  && typeof Symbol() == 'symbol';
+	  && typeof Symbol.iterator == 'symbol';
 
 	var WellKnownSymbolsStore = shared('wks');
 	var Symbol$1 = global_1.Symbol;
-	var createWellKnownSymbol = useSymbolAsUid ? Symbol$1 : uid;
+	var createWellKnownSymbol = useSymbolAsUid ? Symbol$1 : Symbol$1 && Symbol$1.withoutSetter || uid;
 
 	var wellKnownSymbol = function (name) {
 	  if (!has(WellKnownSymbolsStore, name)) {
@@ -584,7 +584,7 @@
 	  } return new (C === undefined ? Array : C)(length === 0 ? 0 : length);
 	};
 
-	var userAgent = getBuiltIn('navigator', 'userAgent') || '';
+	var engineUserAgent = getBuiltIn('navigator', 'userAgent') || '';
 
 	var process = global_1.process;
 	var versions = process && process.versions;
@@ -594,15 +594,15 @@
 	if (v8) {
 	  match = v8.split('.');
 	  version = match[0] + match[1];
-	} else if (userAgent) {
-	  match = userAgent.match(/Edge\/(\d+)/);
+	} else if (engineUserAgent) {
+	  match = engineUserAgent.match(/Edge\/(\d+)/);
 	  if (!match || match[1] >= 74) {
-	    match = userAgent.match(/Chrome\/(\d+)/);
+	    match = engineUserAgent.match(/Chrome\/(\d+)/);
 	    if (match) version = match[1];
 	  }
 	}
 
-	var v8Version = version && +version;
+	var engineV8Version = version && +version;
 
 	var SPECIES$1 = wellKnownSymbol('species');
 
@@ -610,7 +610,7 @@
 	  // We can't use this feature detection in V8 since it causes
 	  // deoptimization and serious performance degradation
 	  // https://github.com/zloirock/core-js/issues/677
-	  return v8Version >= 51 || !fails(function () {
+	  return engineV8Version >= 51 || !fails(function () {
 	    var array = [];
 	    var constructor = array.constructor = {};
 	    constructor[SPECIES$1] = function () {
@@ -627,7 +627,7 @@
 	// We can't use this feature detection in V8 since it causes
 	// deoptimization and serious performance degradation
 	// https://github.com/zloirock/core-js/issues/679
-	var IS_CONCAT_SPREADABLE_SUPPORT = v8Version >= 51 || !fails(function () {
+	var IS_CONCAT_SPREADABLE_SUPPORT = engineV8Version >= 51 || !fails(function () {
 	  var array = [];
 	  array[IS_CONCAT_SPREADABLE] = false;
 	  return array.concat()[0] !== array;
@@ -675,7 +675,7 @@
 	};
 
 	// optional / simple context binding
-	var bindContext = function (fn, that, length) {
+	var functionBindContext = function (fn, that, length) {
 	  aFunction$1(fn);
 	  if (that === undefined) return fn;
 	  switch (length) {
@@ -710,7 +710,7 @@
 	  return function ($this, callbackfn, that, specificCreate) {
 	    var O = toObject($this);
 	    var self = indexedObject(O);
-	    var boundFunction = bindContext(callbackfn, that, 3);
+	    var boundFunction = functionBindContext(callbackfn, that, 3);
 	    var length = toLength(self.length);
 	    var index = 0;
 	    var create = specificCreate || arraySpeciesCreate;
@@ -757,15 +757,37 @@
 	  findIndex: createMethod$1(6)
 	};
 
+	var defineProperty = Object.defineProperty;
+	var cache = {};
+
+	var thrower = function (it) { throw it; };
+
+	var arrayMethodUsesToLength = function (METHOD_NAME, options) {
+	  if (has(cache, METHOD_NAME)) return cache[METHOD_NAME];
+	  if (!options) options = {};
+	  var method = [][METHOD_NAME];
+	  var ACCESSORS = has(options, 'ACCESSORS') ? options.ACCESSORS : false;
+	  var argument0 = has(options, 0) ? options[0] : thrower;
+	  var argument1 = has(options, 1) ? options[1] : undefined;
+
+	  return cache[METHOD_NAME] = !!method && !fails(function () {
+	    if (ACCESSORS && !descriptors) return true;
+	    var O = { length: -1 };
+
+	    if (ACCESSORS) defineProperty(O, 1, { enumerable: true, get: thrower });
+	    else O[1] = 1;
+
+	    method.call(O, argument0, argument1);
+	  });
+	};
+
 	var $filter = arrayIteration.filter;
 
 
 
 	var HAS_SPECIES_SUPPORT = arrayMethodHasSpeciesSupport('filter');
 	// Edge 14- issue
-	var USES_TO_LENGTH = HAS_SPECIES_SUPPORT && !fails(function () {
-	  [].filter.call({ length: -1, 0: 1 }, function (it) { throw it; });
-	});
+	var USES_TO_LENGTH = arrayMethodUsesToLength('filter');
 
 	// `Array.prototype.filter` method
 	// https://tc39.github.io/ecma262/#sec-array.prototype.filter
@@ -887,15 +909,18 @@
 	var $find = arrayIteration.find;
 
 
+
 	var FIND = 'find';
 	var SKIPS_HOLES = true;
+
+	var USES_TO_LENGTH$1 = arrayMethodUsesToLength(FIND);
 
 	// Shouldn't skip holes
 	if (FIND in []) Array(1)[FIND](function () { SKIPS_HOLES = false; });
 
 	// `Array.prototype.find` method
 	// https://tc39.github.io/ecma262/#sec-array.prototype.find
-	_export({ target: 'Array', proto: true, forced: SKIPS_HOLES }, {
+	_export({ target: 'Array', proto: true, forced: SKIPS_HOLES || !USES_TO_LENGTH$1 }, {
 	  find: function find(callbackfn /* , that = undefined */) {
 	    return $find(this, callbackfn, arguments.length > 1 ? arguments[1] : undefined);
 	  }
@@ -904,12 +929,42 @@
 	// https://tc39.github.io/ecma262/#sec-array.prototype-@@unscopables
 	addToUnscopables(FIND);
 
+	var arrayMethodIsStrict = function (METHOD_NAME, argument) {
+	  var method = [][METHOD_NAME];
+	  return !!method && fails(function () {
+	    // eslint-disable-next-line no-useless-call,no-throw-literal
+	    method.call(null, argument || function () { throw 1; }, 1);
+	  });
+	};
+
+	var $forEach = arrayIteration.forEach;
+
+
+
+	var STRICT_METHOD = arrayMethodIsStrict('forEach');
+	var USES_TO_LENGTH$2 = arrayMethodUsesToLength('forEach');
+
+	// `Array.prototype.forEach` method implementation
+	// https://tc39.github.io/ecma262/#sec-array.prototype.foreach
+	var arrayForEach = (!STRICT_METHOD || !USES_TO_LENGTH$2) ? function forEach(callbackfn /* , thisArg */) {
+	  return $forEach(this, callbackfn, arguments.length > 1 ? arguments[1] : undefined);
+	} : [].forEach;
+
+	// `Array.prototype.forEach` method
+	// https://tc39.github.io/ecma262/#sec-array.prototype.foreach
+	_export({ target: 'Array', proto: true, forced: [].forEach != arrayForEach }, {
+	  forEach: arrayForEach
+	});
+
 	var $includes = arrayIncludes.includes;
 
 
+
+	var USES_TO_LENGTH$3 = arrayMethodUsesToLength('indexOf', { ACCESSORS: true, 1: 0 });
+
 	// `Array.prototype.includes` method
 	// https://tc39.github.io/ecma262/#sec-array.prototype.includes
-	_export({ target: 'Array', proto: true }, {
+	_export({ target: 'Array', proto: true, forced: !USES_TO_LENGTH$3 }, {
 	  includes: function includes(el /* , fromIndex = 0 */) {
 	    return $includes(this, el, arguments.length > 1 ? arguments[1] : undefined);
 	  }
@@ -918,25 +973,19 @@
 	// https://tc39.github.io/ecma262/#sec-array.prototype-@@unscopables
 	addToUnscopables('includes');
 
-	var sloppyArrayMethod = function (METHOD_NAME, argument) {
-	  var method = [][METHOD_NAME];
-	  return !method || !fails(function () {
-	    // eslint-disable-next-line no-useless-call,no-throw-literal
-	    method.call(null, argument || function () { throw 1; }, 1);
-	  });
-	};
-
 	var $indexOf = arrayIncludes.indexOf;
+
 
 
 	var nativeIndexOf = [].indexOf;
 
 	var NEGATIVE_ZERO = !!nativeIndexOf && 1 / [1].indexOf(1, -0) < 0;
-	var SLOPPY_METHOD = sloppyArrayMethod('indexOf');
+	var STRICT_METHOD$1 = arrayMethodIsStrict('indexOf');
+	var USES_TO_LENGTH$4 = arrayMethodUsesToLength('indexOf', { ACCESSORS: true, 1: 0 });
 
 	// `Array.prototype.indexOf` method
 	// https://tc39.github.io/ecma262/#sec-array.prototype.indexof
-	_export({ target: 'Array', proto: true, forced: NEGATIVE_ZERO || SLOPPY_METHOD }, {
+	_export({ target: 'Array', proto: true, forced: NEGATIVE_ZERO || !STRICT_METHOD$1 || !USES_TO_LENGTH$4 }, {
 	  indexOf: function indexOf(searchElement /* , fromIndex = 0 */) {
 	    return NEGATIVE_ZERO
 	      // convert -0 to +0
@@ -948,11 +997,11 @@
 	var nativeJoin = [].join;
 
 	var ES3_STRINGS = indexedObject != Object;
-	var SLOPPY_METHOD$1 = sloppyArrayMethod('join', ',');
+	var STRICT_METHOD$2 = arrayMethodIsStrict('join', ',');
 
 	// `Array.prototype.join` method
 	// https://tc39.github.io/ecma262/#sec-array.prototype.join
-	_export({ target: 'Array', proto: true, forced: ES3_STRINGS || SLOPPY_METHOD$1 }, {
+	_export({ target: 'Array', proto: true, forced: ES3_STRINGS || !STRICT_METHOD$2 }, {
 	  join: function join(separator) {
 	    return nativeJoin.call(toIndexedObject(this), separator === undefined ? ',' : separator);
 	  }
@@ -970,9 +1019,9 @@
 	  test.sort(null);
 	});
 	// Old WebKit
-	var SLOPPY_METHOD$2 = sloppyArrayMethod('sort');
+	var STRICT_METHOD$3 = arrayMethodIsStrict('sort');
 
-	var FORCED$1 = FAILS_ON_UNDEFINED || !FAILS_ON_NULL || SLOPPY_METHOD$2;
+	var FORCED$1 = FAILS_ON_UNDEFINED || !FAILS_ON_NULL || !STRICT_METHOD$3;
 
 	// `Array.prototype.sort` method
 	// https://tc39.github.io/ecma262/#sec-array.prototype.sort
@@ -1069,21 +1118,21 @@
 	var trim = stringTrim.trim;
 
 
-	var nativeParseInt = global_1.parseInt;
+	var $parseInt = global_1.parseInt;
 	var hex = /^[+-]?0[Xx]/;
-	var FORCED$2 = nativeParseInt(whitespaces + '08') !== 8 || nativeParseInt(whitespaces + '0x16') !== 22;
+	var FORCED$2 = $parseInt(whitespaces + '08') !== 8 || $parseInt(whitespaces + '0x16') !== 22;
 
 	// `parseInt` method
 	// https://tc39.github.io/ecma262/#sec-parseint-string-radix
-	var _parseInt = FORCED$2 ? function parseInt(string, radix) {
+	var numberParseInt = FORCED$2 ? function parseInt(string, radix) {
 	  var S = trim(String(string));
-	  return nativeParseInt(S, (radix >>> 0) || (hex.test(S) ? 16 : 10));
-	} : nativeParseInt;
+	  return $parseInt(S, (radix >>> 0) || (hex.test(S) ? 16 : 10));
+	} : $parseInt;
 
 	// `parseInt` method
 	// https://tc39.github.io/ecma262/#sec-parseint-string-radix
-	_export({ global: true, forced: parseInt != _parseInt }, {
-	  parseInt: _parseInt
+	_export({ global: true, forced: parseInt != numberParseInt }, {
+	  parseInt: numberParseInt
 	});
 
 	// `RegExp.prototype.flags` getter implementation
@@ -1271,6 +1320,14 @@
 	  }
 	});
 
+	// TODO: Remove from `core-js@4` since it's moved to entry points
+
+
+
+
+
+
+
 	var SPECIES$2 = wellKnownSymbol('species');
 
 	var REPLACE_SUPPORTS_NAMED_GROUPS = !fails(function () {
@@ -1290,6 +1347,15 @@
 	// https://stackoverflow.com/questions/6024666/getting-ie-to-replace-a-regex-with-the-literal-string-0
 	var REPLACE_KEEPS_$0 = (function () {
 	  return 'a'.replace(/./, '$0') === '$0';
+	})();
+
+	var REPLACE = wellKnownSymbol('replace');
+	// Safari <= 13.0.3(?) substitutes nth capture where n>m with an empty string
+	var REGEXP_REPLACE_SUBSTITUTES_UNDEFINED_CAPTURE = (function () {
+	  if (/./[REPLACE]) {
+	    return /./[REPLACE]('a', '$0') === '';
+	  }
+	  return false;
 	})();
 
 	// Chrome 51 has a buggy "split" implementation when RegExp#exec !== nativeExec
@@ -1339,7 +1405,11 @@
 	  if (
 	    !DELEGATES_TO_SYMBOL ||
 	    !DELEGATES_TO_EXEC ||
-	    (KEY === 'replace' && !(REPLACE_SUPPORTS_NAMED_GROUPS && REPLACE_KEEPS_$0)) ||
+	    (KEY === 'replace' && !(
+	      REPLACE_SUPPORTS_NAMED_GROUPS &&
+	      REPLACE_KEEPS_$0 &&
+	      !REGEXP_REPLACE_SUBSTITUTES_UNDEFINED_CAPTURE
+	    )) ||
 	    (KEY === 'split' && !SPLIT_WORKS_WITH_OVERWRITTEN_EXEC)
 	  ) {
 	    var nativeRegExpMethod = /./[SYMBOL];
@@ -1354,7 +1424,10 @@
 	        return { done: true, value: nativeMethod.call(str, regexp, arg2) };
 	      }
 	      return { done: false };
-	    }, { REPLACE_KEEPS_$0: REPLACE_KEEPS_$0 });
+	    }, {
+	      REPLACE_KEEPS_$0: REPLACE_KEEPS_$0,
+	      REGEXP_REPLACE_SUBSTITUTES_UNDEFINED_CAPTURE: REGEXP_REPLACE_SUBSTITUTES_UNDEFINED_CAPTURE
+	    });
 	    var stringMethod = methods[0];
 	    var regexMethod = methods[1];
 
@@ -1473,6 +1546,10 @@
 
 	// @@replace logic
 	fixRegexpWellKnownSymbolLogic('replace', 2, function (REPLACE, nativeReplace, maybeCallNative, reason) {
+	  var REGEXP_REPLACE_SUBSTITUTES_UNDEFINED_CAPTURE = reason.REGEXP_REPLACE_SUBSTITUTES_UNDEFINED_CAPTURE;
+	  var REPLACE_KEEPS_$0 = reason.REPLACE_KEEPS_$0;
+	  var UNSAFE_SUBSTITUTE = REGEXP_REPLACE_SUBSTITUTES_UNDEFINED_CAPTURE ? '$' : '$0';
+
 	  return [
 	    // `String.prototype.replace` method
 	    // https://tc39.github.io/ecma262/#sec-string.prototype.replace
@@ -1486,7 +1563,10 @@
 	    // `RegExp.prototype[@@replace]` method
 	    // https://tc39.github.io/ecma262/#sec-regexp.prototype-@@replace
 	    function (regexp, replaceValue) {
-	      if (reason.REPLACE_KEEPS_$0 || (typeof replaceValue === 'string' && replaceValue.indexOf('$0') === -1)) {
+	      if (
+	        (!REGEXP_REPLACE_SUBSTITUTES_UNDEFINED_CAPTURE && REPLACE_KEEPS_$0) ||
+	        (typeof replaceValue === 'string' && replaceValue.indexOf(UNSAFE_SUBSTITUTE) === -1)
+	      ) {
 	        var res = maybeCallNative(nativeReplace, regexp, this, replaceValue);
 	        if (res.done) return res.value;
 	      }
@@ -1717,7 +1797,7 @@
 
 	// check that a method works with the correct list
 	// of whitespaces and has a correct name
-	var forcedStringTrimMethod = function (METHOD_NAME) {
+	var stringTrimForced = function (METHOD_NAME) {
 	  return fails(function () {
 	    return !!whitespaces[METHOD_NAME]() || non[METHOD_NAME]() != non || whitespaces[METHOD_NAME].name !== METHOD_NAME;
 	  });
@@ -1728,7 +1808,7 @@
 
 	// `String.prototype.trim` method
 	// https://tc39.github.io/ecma262/#sec-string.prototype.trim
-	_export({ target: 'String', proto: true, forced: forcedStringTrimMethod('trim') }, {
+	_export({ target: 'String', proto: true, forced: stringTrimForced('trim') }, {
 	  trim: function trim() {
 	    return $trim(this);
 	  }
@@ -1770,15 +1850,6 @@
 	  TouchList: 0
 	};
 
-	var $forEach = arrayIteration.forEach;
-
-
-	// `Array.prototype.forEach` method implementation
-	// https://tc39.github.io/ecma262/#sec-array.prototype.foreach
-	var arrayForEach = sloppyArrayMethod('forEach') ? function forEach(callbackfn /* , thisArg */) {
-	  return $forEach(this, callbackfn, arguments.length > 1 ? arguments[1] : undefined);
-	} : [].forEach;
-
 	for (var COLLECTION_NAME in domIterables) {
 	  var Collection = global_1[COLLECTION_NAME];
 	  var CollectionPrototype = Collection && Collection.prototype;
@@ -1791,6 +1862,8 @@
 	}
 
 	function _typeof(obj) {
+	  "@babel/helpers - typeof";
+
 	  if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") {
 	    _typeof = function (obj) {
 	      return typeof obj;
@@ -1914,15 +1987,15 @@
 	  getOptionsFromSelectControl: function getOptionsFromSelectControl(selectControl) {
 	    return selectControl.get(selectControl.length - 1).options;
 	  },
-	  getControlContainer: function getControlContainer() {
-	    if (UtilsFilterControl.bootstrapTableInstance.options.filterControlContainer) {
-	      return $("".concat(UtilsFilterControl.bootstrapTableInstance.options.filterControlContainer));
+	  getControlContainer: function getControlContainer(that) {
+	    if (that.options.filterControlContainer) {
+	      return $("".concat(that.options.filterControlContainer));
 	    }
 
-	    return UtilsFilterControl.getCurrentHeader(UtilsFilterControl.bootstrapTableInstance);
+	    return UtilsFilterControl.getCurrentHeader(that);
 	  },
 	  getSearchControls: function getSearchControls(scope) {
-	    var header = UtilsFilterControl.getControlContainer();
+	    var header = UtilsFilterControl.getControlContainer(scope);
 	    var searchControls = UtilsFilterControl.getCurrentSearchControls(scope);
 	    return header.find(searchControls);
 	  },
@@ -2132,7 +2205,7 @@
 	    var z = that.options.pagination ? that.options.sidePagination === 'server' ? that.pageTo : that.options.totalRows : that.pageTo;
 	    $.each(that.header.fields, function (j, field) {
 	      var column = that.columns[that.fieldsColumnsIndex[field]];
-	      var selectControl = UtilsFilterControl.getControlContainer().find(".bootstrap-table-filter-control-".concat(UtilsFilterControl.escapeID(column.field)));
+	      var selectControl = UtilsFilterControl.getControlContainer(that).find(".bootstrap-table-filter-control-".concat(UtilsFilterControl.escapeID(column.field)));
 
 	      if (UtilsFilterControl.isColumnSearchableViaSelect(column) && UtilsFilterControl.isFilterDataNotGiven(column) && UtilsFilterControl.hasSelectControlElement(selectControl)) {
 	        if (selectControl.get(selectControl.length - 1).options.length === 0) {
@@ -2239,7 +2312,7 @@
 
 	        if (filterDataType !== null) {
 	          filterDataSource = column.filterData.substring(column.filterData.indexOf(':') + 1, column.filterData.length);
-	          selectControl = UtilsFilterControl.getControlContainer().find(".bootstrap-table-filter-control-".concat(UtilsFilterControl.escapeID(column.field)));
+	          selectControl = UtilsFilterControl.getControlContainer(that).find(".bootstrap-table-filter-control-".concat(UtilsFilterControl.escapeID(column.field)));
 	          UtilsFilterControl.addOptionToSelectControl(selectControl, '', column.filterControlPlaceholder, column.filterDefault);
 	          filterDataType(filterDataSource, selectControl, that.options.filterOrderBy, column.filterDefault);
 	        } else {
@@ -2249,7 +2322,7 @@
 	    });
 
 	    if (addedFilterControl) {
-	      UtilsFilterControl.getControlContainer().off('keyup', 'input').on('keyup', 'input', function (_ref6, obj) {
+	      UtilsFilterControl.getControlContainer(that).off('keyup', 'input').on('keyup', 'input', function (_ref6, obj) {
 	        var currentTarget = _ref6.currentTarget,
 	            keyCode = _ref6.keyCode;
 	        // Simulate enter key action from clear button
@@ -2277,7 +2350,7 @@
 	          });
 	        }, that.options.searchTimeOut);
 	      });
-	      UtilsFilterControl.getControlContainer().off('change', 'select').on('change', 'select', function (_ref7) {
+	      UtilsFilterControl.getControlContainer(that).off('change', 'select').on('change', 'select', function (_ref7) {
 	        var currentTarget = _ref7.currentTarget,
 	            keyCode = _ref7.keyCode;
 
@@ -2332,14 +2405,14 @@
 	        }, 1);
 	      });
 
-	      if (UtilsFilterControl.getControlContainer().find('.date-filter-control').length > 0) {
+	      if (UtilsFilterControl.getControlContainer(that).find('.date-filter-control').length > 0) {
 	        $.each(that.columns, function (i, _ref9) {
 	          var filterControl = _ref9.filterControl,
 	              field = _ref9.field,
 	              filterDatepickerOptions = _ref9.filterDatepickerOptions;
 
 	          if (filterControl !== undefined && filterControl.toLowerCase() === 'datepicker') {
-	            UtilsFilterControl.getControlContainer().find(".date-filter-control.bootstrap-table-filter-control-".concat(field)).datepicker(filterDatepickerOptions).on('changeDate', function (_ref10) {
+	            UtilsFilterControl.getControlContainer(that).find(".date-filter-control.bootstrap-table-filter-control-".concat(field)).datepicker(filterDatepickerOptions).on('changeDate', function (_ref10) {
 	              var currentTarget = _ref10.currentTarget,
 	                  keyCode = _ref10.keyCode;
 	              clearTimeout(currentTarget.timeoutId || 0);
@@ -2358,7 +2431,7 @@
 	        that.triggerSearch();
 	      }
 	    } else {
-	      UtilsFilterControl.getControlContainer().find('.filterControl').hide();
+	      UtilsFilterControl.getControlContainer(that).find('.filterControl').hide();
 	    }
 	  },
 	  getDirectionOfSelectOptions: function getDirectionOfSelectOptions(_alignment) {
@@ -2494,9 +2567,7 @@
 	$.fn.bootstrapTable.methods.push('triggerSearch');
 	$.fn.bootstrapTable.methods.push('clearFilterControl');
 
-	$.BootstrapTable =
-	/*#__PURE__*/
-	function (_$$BootstrapTable) {
+	$.BootstrapTable = /*#__PURE__*/function (_$$BootstrapTable) {
 	  _inherits(_class, _$$BootstrapTable);
 
 	  function _class() {
@@ -2510,8 +2581,7 @@
 	    value: function init() {
 	      var _this = this;
 
-	      UtilsFilterControl.bootstrapTableInstance = this; // Make sure that the filterControl option is set
-
+	      // Make sure that the filterControl option is set
 	      if (this.options.filterControl) {
 	        var that = this; // Make sure that the internal variables are set correctly
 
@@ -2523,11 +2593,13 @@
 	          } // Avoid recreate the controls
 
 
-	          if (UtilsFilterControl.getControlContainer().find('select').length > 0 || UtilsFilterControl.getControlContainer().find('input').length > 0) {
+	          var $controlContainer = UtilsFilterControl.getControlContainer(that);
+
+	          if ($controlContainer.find('select').length > 0 || $controlContainer.find('input').length > 0) {
 	            return;
 	          }
 
-	          UtilsFilterControl.createControls(that, UtilsFilterControl.getControlContainer());
+	          UtilsFilterControl.createControls(that, $controlContainer);
 	        }).on('post-header.bs.table', function () {
 	          UtilsFilterControl.setValues(that);
 	        }).on('post-body.bs.table', function () {
@@ -2556,7 +2628,7 @@
 	        return;
 	      }
 
-	      UtilsFilterControl.createControls(this, UtilsFilterControl.getControlContainer());
+	      UtilsFilterControl.createControls(this, UtilsFilterControl.getControlContainer(this));
 	    }
 	  }, {
 	    key: "initBody",
@@ -2571,20 +2643,14 @@
 	      var that = this;
 	      var fp = $.isEmptyObject(that.filterColumnsPartial) ? null : that.filterColumnsPartial;
 
-	      if (fp === null || Object.keys(fp).length <= 1) {
-	        _get(_getPrototypeOf(_class.prototype), "initSearch", this).call(this);
-	      }
+	      _get(_getPrototypeOf(_class.prototype), "initSearch", this).call(this);
 
-	      if (this.options.sidePagination === 'server') {
-	        return;
-	      }
-
-	      if (fp === null) {
+	      if (this.options.sidePagination === 'server' || fp === null) {
 	        return;
 	      } // Check partial column filter
 
 
-	      that.data = fp ? that.options.data.filter(function (item, i) {
+	      that.data = fp ? that.data.filter(function (item, i) {
 	        var itemIsExpected = [];
 	        var keys1 = Object.keys(item);
 	        var keys2 = Object.keys(fp);
