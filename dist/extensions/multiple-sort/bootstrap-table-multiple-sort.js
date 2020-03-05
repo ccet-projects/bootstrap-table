@@ -1992,6 +1992,10 @@
 	      }
 	    });
 	    this.$el.on('column-switch.bs.table', function (field, checked) {
+	      if (!that.options.sortPriority) {
+	        return;
+	      }
+
 	      for (var i = 0; i < that.options.sortPriority.length; i++) {
 	        if (that.options.sortPriority[i].sortName === checked) {
 	          that.options.sortPriority.splice(i, 1);

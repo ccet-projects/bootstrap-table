@@ -555,6 +555,9 @@ BootstrapTable.prototype.initToolbar = function (...args) {
     })
 
     this.$el.on('column-switch.bs.table', (field, checked) => {
+      if (!that.options.sortPriority) {
+        return
+      }
       for (let i = 0; i < that.options.sortPriority.length; i++) {
         if (that.options.sortPriority[i].sortName === checked) {
           that.options.sortPriority.splice(i, 1)
